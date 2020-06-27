@@ -3,11 +3,29 @@ uniform float time;
 uniform vec2 resolution;
 uniform vec2 mouse;
 
+#define SIZE_OF_OBJS_ARRAY 100
+
+struct Material{
+    vec3 albedo;
+    vec3 f0;
+    float roughness;
+    bool glow;
+    int kind;
+};
+
+struct Light{
+    vec3 power;
+    vec3 pos;
+    vec3 rot;
+    int kind;
+};
+
 struct Object{
     vec3 pos;
     vec3 rot;
     int kind;
     float[10] params;
+    Material material;
 };
 
 struct Camera{
@@ -16,9 +34,14 @@ struct Camera{
 };
 
 
-vec3 calc_ray(Camera cam,float x,float z);
-float distance_func(Object obj,vec3 rayhead);
-vec3 calc_norm(Object obj,vec3 hitpos);
+vec3 calc_ray(in Camera cam,in float x,in float z);
+float distance_func(in Object obj,in vec3 rayhead);
+vec3 calc_norm(in Object obj,in vec3 hitpos);
+vec3 material_color(in Material mat);
+vec3 calc_light(in Light light,in vec3 hitpos);
+
+void raymarching(in vec3 origin,in vec3 ray,in Object[SIZE_OF_OBJS_ARRAY] objs,inout bool hitflag,inout int hitnum);
+//inonutで渡さないと参照代入したいやつに関数内で代入が行われないと、mainで代入した値じゃなく各型ごとの初期値が勝手に代入されてバグる。
 
 
 
@@ -35,7 +58,6 @@ vec3 normed_phong(vec3 speccolor,float power,vec3 view, vec3 norm, vec3 lightDir
 const float PI = 3.1415926535;
 const int marching_max = 128;
 const int obj_num = 2;
-// const float eps = 0.001;
 
 
 void main(){
@@ -44,43 +66,75 @@ void main(){
     float st_x = st.x;
     float st_z = st.y;
 
+    Material mate1;
+    Material mate2;
+
+    mate1.albedo = vec3(1.0,0.0,1.0);
+    mate2.albedo = vec3(1.0,0.0,0.0);
+
+    mate1.kind = 1;
+    mate2.kind = 1;
+
     Camera cam;
     cam.pos = vec3(0.0,0.0,0.0);
     cam.fov = (PI*30.0)/(2.0*180.0);
 
-    Object objs[obj_num];
+    Object objs[SIZE_OF_OBJS_ARRAY];
 
     objs[0].pos = vec3(2.5,15.0,2.5);
     objs[0].rot = vec3(0.0,0.0,0.0);
     objs[0].kind = 1;
     objs[0].params[0] = 1.0;
+    objs[0].material = mate1;
 
     objs[1].pos = vec3(-2.5,15.0,-2.5);
     objs[1].rot = vec3(0.0,0.0,0.0);
     objs[1].kind = 1;
     objs[1].params[0] = 1.0;
+    objs[1].material = mate2;
 
 
 
     vec3 ray;
     ray = calc_ray(cam,st_x,st_z);
 
-
-    float max_dis = 100.0;
-    float min_dis = 0.01;
-    float rlen = 0.0;
     bool hitflag = false;
-    const int max_loop = 100;
+    int hitnum = -1;
+    raymarching(cam.pos,ray,objs,hitflag,hitnum);
 
+
+
+    if (hitflag){
+        vec3 col;
+        vec3 origin = cam.pos;
+        
+        for (int i = 0; i < obj_num; ++ i){//なんとobjs[hitnum]は通らない。可読性のためにcolorを分離したいからこうなった。
+            if (i == hitnum){
+                col = material_color(objs[i].material);
+            }
+        };
+        gl_FragColor = vec4(col,1.0);
+    }else{
+        gl_FragColor = vec4(0.0, 0.0 ,0.0, 1.0);
+    }
+
+
+}
+
+void raymarching(in vec3 origin,in vec3 ray,in Object[SIZE_OF_OBJS_ARRAY] objs,inout bool hitflag,inout int hitnum){
+    float max_dis = 100.0;
+    float min_dis = 0.001;
+    float rlen = 0.0;
+    const int max_loop = 100;
     for (int i = 0; i < max_loop; ++i){
-        float shortest = 1e9;
+        float shortest = 1e9;    
         for (int j = 0; j < obj_num; ++ j){
-            float d = distance_func(objs[j],cam.pos+ray*rlen);
+            float d = distance_func(objs[j],origin+ray*rlen);
             if (d < shortest){
                 shortest = d;
+                hitnum = j;
             }
         }
-        
         if (rlen > max_dis){
             break;
         }
@@ -91,14 +145,6 @@ void main(){
             rlen += shortest;
         }
     }
-
-    if (hitflag){
-        gl_FragColor = vec4(1.0,1.0,1.0,1.0);
-    }else{
-        gl_FragColor = vec4(0.0, 0.0 ,0.0, 1.0);
-    }
-
-
 }
 
 vec3 calc_ray(in Camera cam,in float x,in float z){
@@ -123,6 +169,18 @@ vec3 calc_norm(in Object obj,in vec3 hitpos){
     );
 }
 
+vec3 material_color(in Material mat){
+    if(mat.kind==1){
+        return mat.albedo/PI;
+    }
+}
+vec3 calc_light(in Light light,in vec3 hitpos){
+    if(light.kind==1){
+        vec3 ray_direc = vec3(1.0,1.0,-1.0);
+        ray_direc = normalize(ray_direc);
+        return vec3(1.0,1.0,1.0);
+    }
+}
 
 
 // float atan2(float y, float x){
