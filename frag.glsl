@@ -38,8 +38,11 @@ struct Camera{
 vec3 calc_ray(in Camera cam,in float x,in float z);
 float distance_func(in Object obj,in vec3 rayhead);
 vec3 calc_norm(in Object obj,in vec3 hitpos);
-vec3 material_color(in Material mat);
+vec3 material_color(in Material mat,in vec3 n,in vec3 v,in vec3 l);
 void calc_light(in Light light,in vec3 hitpos,inout vec3 light_vec);
+float pbr_D(in Material mat,in vec3 n,in vec3 h);
+float pbr_V(in Material mat, in vec3 n,in vec3 v,in vec3 l);
+vec3 pbr_F(in Material mat, in vec3 l,in vec3 h);
 
 void raymarching(in vec3 origin,in vec3 ray,in Object[SIZE_OF_OBJS_ARRAY] objs,inout bool hitflag,inout int hitnum,inout vec3 hitpos);
 //inonutで渡さないと参照代入したいやつに関数内で代入が行われないと、mainで代入した値じゃなく各型ごとの初期値が勝手に代入されてバグる。
@@ -77,11 +80,14 @@ void main(){
     Material mate1;
     Material mate2;
 
-    mate1.albedo = vec3(1.0,0.0,1.0);
-    mate2.albedo = vec3(1.0,0.0,0.0);
-
-    mate1.kind = 1;
-    mate2.kind = 1;
+    mate1.albedo = vec3(0.9,0.3,0.3);
+    mate2.albedo = vec3(0.9,0.9,0.9);
+    mate1.f0 = vec3(0.7,0.7,0.7);
+    mate2.f0 = vec3(0.7,0.7,0.7);
+    mate1.roughness = 0.1;
+    mate2.roughness = 0.1;
+    mate1.kind = 2;
+    mate2.kind = 2;
 
     Camera cam;
     cam.pos = vec3(0.0,0.0,0.0);
@@ -112,14 +118,16 @@ void main(){
     int hitnum = -1;
     vec3 hitpos;
     raymarching(cam.pos,ray,objs,hitflag,hitnum,hitpos);
-    vec3 light_vec;
 
 
 
     if (hitflag){
-        vec3 brdf = vec3(0.0,0.0,0.0);
-        vec3 norm = vec3(0.0,0.0,0.0);
-        // vec3 origin = cam.pos;
+        vec3 brdf;
+        vec3 norm;
+        // vec3 half_vec;
+        vec3 light_vec;
+        vec3 view;
+        vec3 origin = cam.pos;
         vec3 col = vec3(0.0,0.0,0.0);
         vec3 light_col = vec3(0.0,0.0,0.0);
         float eps = 0.001;
@@ -127,11 +135,12 @@ void main(){
         for (int i = 0; i < obj_num; ++ i){//なんとobjs[hitnum]は通らない。可読性のためにcolorを分離したいからこうなった。
             if (i == hitnum){
                 norm = calc_norm(objs[i],hitpos);
-                brdf = material_color(objs[i].material);
+                calc_light(dlight,hitpos,light_vec);
+                view = normalize(origin-hitpos);
+                // half_vec = normalize(view+light_vec);
+                brdf = material_color(objs[i].material,norm,view,light_vec);
             }
-        }
-
-        calc_light(dlight,hitpos,light_vec);
+        }        
         light_col = dlight.power*clamp(dot(norm,light_vec),0.2,0.95);
         col = light_col*brdf;
         gl_FragColor = vec4(col,1.0);
@@ -199,9 +208,16 @@ vec3 calc_norm(in Object obj,in vec3 hitpos){
     );
 }
 
-vec3 material_color(in Material mat){
+vec3 material_color(in Material mat,in vec3 n,in vec3 v,in vec3 l){
     if(mat.kind==1){
         return mat.albedo/PI;
+    }else if(mat.kind == 2){
+        vec3 h = normalize(l+v);
+        float pbr_d = pbr_D(mat,n,h);
+        float pbr_v = pbr_V(mat,n,v,l);
+        vec3 pbr_f = pbr_F(mat,l,h);
+        vec3 diff = mat.albedo/PI;
+        return (vec3(1.0)-pbr_f)*diff+pbr_d*pbr_f*pbr_v;
     }
 }
 void calc_light(in Light light,in vec3 hitpos,inout vec3 light_vec){
@@ -211,6 +227,33 @@ void calc_light(in Light light,in vec3 hitpos,inout vec3 light_vec){
     }
 }
 
+
+float pbr_D(in Material mat,in vec3 n,in vec3 h){
+    float al2 = mat.roughness*mat.roughness*mat.roughness*mat.roughness;
+    float dotNH2 = dot(n,h)*dot(n,h);
+    float base = PI*((dotNH2*(al2-1.0)+1.0)*(dotNH2*(al2-1.0)+1.0));
+    return clamp(al2/base,0.0,1.0);
+}
+float pbr_V(in Material mat, in vec3 n,in vec3 v,in vec3 l){
+    float al2 = mat.roughness*mat.roughness*mat.roughness*mat.roughness;
+    float dotNL = dot(n,l);
+    float dotNV = dot(n,v);
+
+    float base1 = dotNV*sqrt(dotNL*dotNL*(1.0-al2)+al2);
+    float base2 = dotNL*sqrt(dotNV*dotNV*(1.0-al2)+al2);
+
+    return clamp(0.5/(base1+base2),0.0,1.0);
+}
+vec3 pbr_F(in Material mat, in vec3 l,in vec3 h){
+    float dotLH = dot(l,h);
+    float hoge = pow((1.0-dotLH),5.0);
+
+    return clamp(mat.f0+(vec3(1.0)-mat.f0)*hoge,0.0,1.0);
+}
+
+
+    // def F(self,l,h):
+    //     return np.clip(self.f0 + (1-self.f0)*((1-np.dot(l,h))**5),0,1)
 
 // float atan2(float y, float x){
 //     return x == 0.0 ? sign(y)*pi/2.0 : atan(y, x);
