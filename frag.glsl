@@ -3,7 +3,8 @@ uniform float time;
 uniform vec2 resolution;
 uniform vec2 mouse;
 
-#define SIZE_OF_OBJS_ARRAY 100
+#define SIZE_OF_OBJS_ARRAY 10
+//このSIZEがでかすぎると貧弱GPUだとメモリクラッシュしてエラーもなく真っ黒になるので注意。気づきにくいのでかなりしんどい。
 
 struct Material{
     vec3 albedo;
@@ -38,10 +39,13 @@ vec3 calc_ray(in Camera cam,in float x,in float z);
 float distance_func(in Object obj,in vec3 rayhead);
 vec3 calc_norm(in Object obj,in vec3 hitpos);
 vec3 material_color(in Material mat);
-vec3 calc_light(in Light light,in vec3 hitpos);
+void calc_light(in Light light,in vec3 hitpos,inout vec3 light_vec);
 
-void raymarching(in vec3 origin,in vec3 ray,in Object[SIZE_OF_OBJS_ARRAY] objs,inout bool hitflag,inout int hitnum);
+void raymarching(in vec3 origin,in vec3 ray,in Object[SIZE_OF_OBJS_ARRAY] objs,inout bool hitflag,inout int hitnum,inout vec3 hitpos);
 //inonutで渡さないと参照代入したいやつに関数内で代入が行われないと、mainで代入した値じゃなく各型ごとの初期値が勝手に代入されてバグる。
+//配列を引数渡しするときは固定長じゃないと行けないので、#defineで大きめにとって渡す(constで行けるかは知らん)
+
+//Struct hoge[num]と宣言してからhoge[0] = fuga(struct)とすることができない(なんで？)
 
 
 
@@ -66,6 +70,10 @@ void main(){
     float st_x = st.x;
     float st_z = st.y;
 
+    Light dlight;
+    dlight.power = vec3(3.0,3.0,3.0);
+    dlight.kind = 1;
+
     Material mate1;
     Material mate2;
 
@@ -81,16 +89,18 @@ void main(){
 
     Object objs[SIZE_OF_OBJS_ARRAY];
 
-    objs[0].pos = vec3(2.5,15.0,2.5);
+    objs[0].pos = vec3(0.0,15.0,0.0);
     objs[0].rot = vec3(0.0,0.0,0.0);
     objs[0].kind = 1;
-    objs[0].params[0] = 1.0;
+    objs[0].params[0] = 1.5;
     objs[0].material = mate1;
 
-    objs[1].pos = vec3(-2.5,15.0,-2.5);
+    objs[1].pos = vec3(0.0,15.0,-2.5);
     objs[1].rot = vec3(0.0,0.0,0.0);
-    objs[1].kind = 1;
-    objs[1].params[0] = 1.0;
+    objs[1].kind = 2;
+    objs[1].params[0] = 5.0;
+    objs[1].params[1] = 10.0;
+    objs[1].params[2] = 1.0;
     objs[1].material = mate2;
 
 
@@ -100,30 +110,43 @@ void main(){
 
     bool hitflag = false;
     int hitnum = -1;
-    raymarching(cam.pos,ray,objs,hitflag,hitnum);
+    vec3 hitpos;
+    raymarching(cam.pos,ray,objs,hitflag,hitnum,hitpos);
+    vec3 light_vec;
 
 
 
     if (hitflag){
-        vec3 col;
-        vec3 origin = cam.pos;
+        vec3 brdf = vec3(0.0,0.0,0.0);
+        vec3 norm = vec3(0.0,0.0,0.0);
+        // vec3 origin = cam.pos;
+        vec3 col = vec3(0.0,0.0,0.0);
+        vec3 light_col = vec3(0.0,0.0,0.0);
+        float eps = 0.001;
         
         for (int i = 0; i < obj_num; ++ i){//なんとobjs[hitnum]は通らない。可読性のためにcolorを分離したいからこうなった。
             if (i == hitnum){
-                col = material_color(objs[i].material);
+                norm = calc_norm(objs[i],hitpos);
+                brdf = material_color(objs[i].material);
             }
-        };
+        }
+
+        calc_light(dlight,hitpos,light_vec);
+        light_col = dlight.power*clamp(dot(norm,light_vec),0.2,0.95);
+        col = light_col*brdf;
         gl_FragColor = vec4(col,1.0);
     }else{
+        // gl_FragColor = vec4(0.5, 0.5 ,0.5, 1.0);
         gl_FragColor = vec4(0.0, 0.0 ,0.0, 1.0);
+        // gl_FragColor = vec4(1.0, 1.0 ,1.0, 1.0);
     }
 
 
 }
 
-void raymarching(in vec3 origin,in vec3 ray,in Object[SIZE_OF_OBJS_ARRAY] objs,inout bool hitflag,inout int hitnum){
+void raymarching(in vec3 origin,in vec3 ray,in Object[SIZE_OF_OBJS_ARRAY] objs,inout bool hitflag,inout int hitnum,inout vec3 hitpos){
     float max_dis = 100.0;
-    float min_dis = 0.001;
+    float min_dis = 0.01;
     float rlen = 0.0;
     const int max_loop = 100;
     for (int i = 0; i < max_loop; ++i){
@@ -140,6 +163,7 @@ void raymarching(in vec3 origin,in vec3 ray,in Object[SIZE_OF_OBJS_ARRAY] objs,i
         }
         if (abs(shortest) < min_dis){
             hitflag = true;
+            hitpos = origin + ray*rlen;
             break;
         }else{
             rlen += shortest;
@@ -154,12 +178,18 @@ vec3 calc_ray(in Camera cam,in float x,in float z){
 float distance_func(in Object obj,in vec3 rayhead){
     vec3 p = rayhead-obj.pos;
     if (obj.kind == 1){
+        // sphere
         return length(p)-obj.params[0];
+    }else if (obj.kind==2){
+        // box
+        p = abs(p)-vec3(obj.params[0],obj.params[1],obj.params[2]);
+        return length(max(p,0.0)) + min(max(p.x,max(p.y,p.z)),0.0);
     }
 }
 
 vec3 calc_norm(in Object obj,in vec3 hitpos){
     float eps = 0.001;
+    // return normalize(vec3(1.0,1.0,1.0));
     return normalize(
         vec3(
             distance_func(obj,hitpos+vec3(eps,0.0,0.0))-distance_func(obj,hitpos+vec3(-eps,0.0,0.0)),
@@ -174,11 +204,10 @@ vec3 material_color(in Material mat){
         return mat.albedo/PI;
     }
 }
-vec3 calc_light(in Light light,in vec3 hitpos){
+void calc_light(in Light light,in vec3 hitpos,inout vec3 light_vec){
     if(light.kind==1){
-        vec3 ray_direc = vec3(1.0,1.0,-1.0);
-        ray_direc = normalize(ray_direc);
-        return vec3(1.0,1.0,1.0);
+        light_vec = -vec3(1.0,1.0,-1.0);
+        light_vec = normalize(light_vec);
     }
 }
 
