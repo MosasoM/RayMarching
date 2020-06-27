@@ -15,36 +15,12 @@ struct Camera{
     float fov;
 };
 
-struct transform{
-    vec3 pos;
-    vec3 rot;
-};
-
-struct intersection{
-    bool hit;
-    vec3 p;
-    float distance;
-    vec3 normal;
-
-};
 
 vec3 calc_ray(Camera cam,float x,float z);
 float distance_func(Object obj,vec3 rayhead);
 vec3 calc_norm(Object obj,vec3 hitpos);
 
-float atan2(float y, float x);
-float df_sphere(vec3 pos, float size);
-vec3 sp_norm (vec3 pos,float size);
-float df_box(vec3 box,vec3 size);
-vec3 box_norm(vec3 pos,vec3 size);
-float df_torus(vec3 p, vec2 t);
-vec3 torus_norm(vec3 p, vec2 t);
-float df_cylinder(vec3 pos, vec3 size);
-vec3 sylinder_norm(vec3 pos, vec3 size);
-float df_prism(vec3 p,vec2 h);
-vec3 prism_norm(vec3 p,vec2 h);
-float df_octa(vec3 p,float s);
-vec3 octa_norm(vec3 p, float t);
+
 
 vec3 microBRDF(float a,float dotNH, float dotNV, float dotNL, float dotVH,vec3 speccolor);
 float D_GGX(float a, float dotNH);
@@ -57,108 +33,86 @@ vec3 normed_phong(vec3 speccolor,float power,vec3 view, vec3 norm, vec3 lightDir
 
 
 const float PI = 3.1415926535;
-vec2 oo = vec2(0.0,0.0);
 const int marching_max = 128;
+const int obj_num = 2;
 // const float eps = 0.001;
 
 
 void main(){
 
-vec2 st = (gl_FragCoord.xy-resolution.xy)/min(resolution.x,resolution.y);
-float st_x = st.x;
-float st_z = st.y;
+    vec2 st = (gl_FragCoord.xy-resolution.xy)/min(resolution.x,resolution.y);
+    float st_x = st.x;
+    float st_z = st.y;
 
-Camera cam;
-cam.pos = vec3(0.0,0.0,0.0);
-cam.fov = (PI*30.0)/(2.0*180.0);
+    Camera cam;
+    cam.pos = vec3(0.0,0.0,0.0);
+    cam.fov = (PI*30.0)/(2.0*180.0);
 
-Object sphere;
-sphere.pos = vec3(2.5,15.0,2.5);
-sphere.rot = vec3(0.0,0.0,0.0);
-sphere.kind = 1;
-sphere.params[0] = 1.0;
+    Object objs[obj_num];
 
-vec3 ray;
-ray = calc_ray(cam,st_x,st_z);
+    objs[0].pos = vec3(2.5,15.0,2.5);
+    objs[0].rot = vec3(0.0,0.0,0.0);
+    objs[0].kind = 1;
+    objs[0].params[0] = 1.0;
+
+    objs[1].pos = vec3(-2.5,15.0,-2.5);
+    objs[1].rot = vec3(0.0,0.0,0.0);
+    objs[1].kind = 1;
+    objs[1].params[0] = 1.0;
 
 
-float max_dis = 100.0;
-float min_dis = 0.01;
-float rlen = 0.0;
-bool hitflag = false;
-const int max_loop = 100;
 
-for (int i = 0; i < max_loop; ++i){
-    float d = distance_func(sphere,cam.pos+ray*rlen);
-    if (rlen > max_dis){
-        break;
+    vec3 ray;
+    ray = calc_ray(cam,st_x,st_z);
+
+
+    float max_dis = 100.0;
+    float min_dis = 0.01;
+    float rlen = 0.0;
+    bool hitflag = false;
+    const int max_loop = 100;
+
+    for (int i = 0; i < max_loop; ++i){
+        float shortest = 1e9;
+        for (int j = 0; j < obj_num; ++ j){
+            float d = distance_func(objs[j],cam.pos+ray*rlen);
+            if (d < shortest){
+                shortest = d;
+            }
+        }
+        
+        if (rlen > max_dis){
+            break;
+        }
+        if (abs(shortest) < min_dis){
+            hitflag = true;
+            break;
+        }else{
+            rlen += shortest;
+        }
     }
-    if (abs(d) < min_dis){
-        hitflag = true;
-        break;
+
+    if (hitflag){
+        gl_FragColor = vec4(1.0,1.0,1.0,1.0);
     }else{
-        rlen += d;
+        gl_FragColor = vec4(0.0, 0.0 ,0.0, 1.0);
     }
-}
 
-if (hitflag){
-    gl_FragColor = vec4(1.0,1.0,1.0,1.0);
-}else{
-    gl_FragColor = vec4(0.0, 0.0 ,0.0, 1.0);
-}
-
-
-
-// float dist = 10000000.0; // length to next object
-// float rlen = 0.0; //additional length to ray pos
-// vec3 rpos = cpos; //position of the tip of ray
-
-
-// for (int i = 0; i < marching_max; ++i){
-//     for (int j = 0; j < 8; ++ j){
-//         float d = df_sphere(rpos-sp_all[j],0.2);
-//         dist = min(dist,d);
-//     }
-//     rlen += dist;
-//     rpos = cpos + ray*rlen;
-// }
-
-// bool flag = true;
-// for (int i = 0; i < 8; ++ i){
-//         float d = df_sphere(rpos-sp_all[i],0.2);
-//         if (d<eps){
-//             flag = false;
-//             break;
-//         }
-// }
-
-// if (flag){     
-//     gl_FragColor = vec4(vec3(0.7), 1.0);
-// }else{
-//     for (int i = 0; i < 8; ++ i){
-//         float d = df_sphere(rpos-sp_all[i],0.2);
-//         if (d<eps){
-//             vec3 temp = vec3(abs(sp_all[i].x),abs(sp_all[i].y),abs(sp_all[i].z));
-//             gl_FragColor = vec4((normalize(sp_all[i])+0.2)*sin(time/800.0), 1.0);
-//             break;
-//         }
-//     }
-// }
 
 }
 
-vec3 calc_ray(Camera cam, float x, float z){
+vec3 calc_ray(in Camera cam,in float x,in float z){
     return normalize(vec3(sin(cam.fov)*x ,cos(cam.fov),sin(cam.fov)*z));
 }
 
-float distance_func(Object obj,vec3 rayhead){
+float distance_func(in Object obj,in vec3 rayhead){
     vec3 p = rayhead-obj.pos;
     if (obj.kind == 1){
         return length(p)-obj.params[0];
     }
 }
 
-vec3 calc_norm(Object obj,vec3 hitpos){
+vec3 calc_norm(in Object obj,in vec3 hitpos){
     float eps = 0.001;
     return normalize(
         vec3(
