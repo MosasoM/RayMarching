@@ -28,7 +28,7 @@ struct intersection{
 
 };
 
-vec3 calc_ray(Camera cam,float x,float y);
+vec3 calc_ray(Camera cam,float x,float z);
 float distance_func(Object obj,vec3 rayhead);
 vec3 calc_norm(Object obj,vec3 hitpos);
 
@@ -56,7 +56,7 @@ vec3 rot_by_Rodrigues(vec3 p, vec3 axis, float angle);
 vec3 normed_phong(vec3 speccolor,float power,vec3 view, vec3 norm, vec3 lightDir);
 
 
-const float pi = 3.1415926535;
+const float PI = 3.1415926535;
 vec2 oo = vec2(0.0,0.0);
 const int marching_max = 128;
 // const float eps = 0.001;
@@ -64,15 +64,49 @@ const int marching_max = 128;
 
 void main(){
 
-vec2 st = (gl_FragCoord.xy*2.0-resolution.xy)/min(resolution.x,resolution.y);
+vec2 st = (gl_FragCoord.xy-resolution.xy)/min(resolution.x,resolution.y);
+float st_x = st.x;
+float st_z = st.y;
+
 Camera cam;
 cam.pos = vec3(0.0,0.0,0.0);
-cam.fov = 30.0/2.0;
+cam.fov = (PI*30.0)/(2.0*180.0);
+
+Object sphere;
+sphere.pos = vec3(2.5,15.0,2.5);
+sphere.rot = vec3(0.0,0.0,0.0);
+sphere.kind = 1;
+sphere.params[0] = 1.0;
 
 vec3 ray;
-ray = calc_ray(cam,st.x,st.y);
+ray = calc_ray(cam,st_x,st_z);
 
-gl_FragColor = vec4(ray.xy, -ray.z, 1.0);
+
+float max_dis = 100.0;
+float min_dis = 0.01;
+float rlen = 0.0;
+bool hitflag = false;
+const int max_loop = 100;
+
+for (int i = 0; i < max_loop; ++i){
+    float d = distance_func(sphere,cam.pos+ray*rlen);
+    if (rlen > max_dis){
+        break;
+    }
+    if (abs(d) < min_dis){
+        hitflag = true;
+        break;
+    }else{
+        rlen += d;
+    }
+}
+
+if (hitflag){
+    gl_FragColor = vec4(1.0,1.0,1.0,1.0);
+}else{
+    gl_FragColor = vec4(0.0, 0.0 ,0.0, 1.0);
+}
+
 
 
 // float dist = 10000000.0; // length to next object
@@ -113,8 +147,8 @@ gl_FragColor = vec4(ray.xy, -ray.z, 1.0);
 
 }
 
-vec3 calc_ray(Camera cam, float x, float y){
-    return normalize(vec3(sin(cam.fov)*x , sin(cam.fov)*y , cos(cam.fov)));
+vec3 calc_ray(Camera cam, float x, float z){
+    return normalize(vec3(sin(cam.fov)*x ,cos(cam.fov),sin(cam.fov)*z));
 }
 
 float distance_func(Object obj,vec3 rayhead){
