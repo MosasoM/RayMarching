@@ -32,6 +32,8 @@ struct Object{
 struct Camera{
     vec3 pos;
     float fov;
+    vec3 lookAt;
+    vec3 up;
 };
 
 
@@ -60,7 +62,7 @@ const int reflection_num = 3;
 
 void main(){
 
-    vec2 st = (gl_FragCoord.xy-resolution.xy)/min(resolution.x,resolution.y);
+    vec2 st = (gl_FragCoord.xy-resolution.xy)/resolution.xy;//これですでに-1〜1になってる。
     float st_x = st.x;
     float st_z = st.y;
 
@@ -83,6 +85,10 @@ void main(){
     Camera cam;
     cam.pos = vec3(0.0,0.0,0.0);
     cam.fov = (PI*30.0)/(2.0*180.0);
+    cam.lookAt = normalize(vec3(0.0,1.0,0.0));
+    cam.up = normalize(vec3(0.0,0.0,1.0));
+    // cam.pos.x = sin(time/200.0)*5.0;
+    // cam.lookAt = normalize(vec3(0.0,15.0,0.0)-cam.pos);
 
     Object objs[SIZE_OF_OBJS_ARRAY];
 
@@ -191,6 +197,7 @@ void main(){
         gl_FragColor = vec4(vec3(0.0),1.0);
     }
 
+
 }
 
 void raymarching(in vec3 origin,in vec3 ray,in Object[SIZE_OF_OBJS_ARRAY] objs,out int hitnum,out bool ishit,out vec3 hitpos){
@@ -224,7 +231,9 @@ void raymarching(in vec3 origin,in vec3 ray,in Object[SIZE_OF_OBJS_ARRAY] objs,o
 }
 
 vec3 calc_ray(in Camera cam,in float x,in float z){
-    return normalize(vec3(sin(cam.fov)*x ,cos(cam.fov),sin(cam.fov)*z));
+    vec3 side = normalize(cross(cam.lookAt,cam.up));
+
+    return normalize(sin(cam.fov)*x*side+cos(cam.fov)*cam.lookAt+sin(cam.fov)*z*cam.up);
 }
 
 float distance_func(in Object obj,in vec3 rayhead){
