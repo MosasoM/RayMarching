@@ -18,7 +18,7 @@ function geo(){
 let shade_par={
     uniforms:{
         "time":{value:1.0},
-        "resolution": {value: new THREE.Vector2(256.0, 256.0)},
+        "resolution": {value: new THREE.Vector2(pzm.con.init_width, pzm.con.init_height)},
         "mouse" : {value: new THREE.Vector2(0.0,0.0)},
     },
     vertexShader:[
@@ -77,7 +77,7 @@ function init(){
         mat = new THREE.ShaderMaterial(shade_par)
         mesh = new THREE.Mesh(geometry,mat);
         pzm.par.scene.add(mesh);
-    
+        pzm.con.sttime = performance.now();
       tick();
       //rend();
       })
@@ -96,14 +96,17 @@ function tick() {
   stats.begin();
   if (!gp_op.stop){
     time = performance.now();
-    mat.uniforms.time.value = time;
+    mat.uniforms.time.value = (time-pzm.con.sttime)/1000;
     mat.uniforms.mouse.value = mouse;
     pzm.par.renderer.render(pzm.par.scene, pzm.par.camera);
     pzm.par.control_cam.update();
     pzm.par.control_light.update();
   }
   stats.end();
-  requestAnimationFrame(tick);
+  pzm.par.frames += 1;
+  if (pzm.par.frames < 180){
+    requestAnimationFrame(tick);
+  }
   }
 
 

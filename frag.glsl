@@ -10,7 +10,6 @@ struct Material{
     vec3 albedo;
     vec3 f0;
     float roughness;
-    bool glow;
     int kind;
 };
 
@@ -55,7 +54,6 @@ void raymarching(in vec3 origin,in vec3 ray,in Object[SIZE_OF_OBJS_ARRAY] objs,o
 
 
 const float PI = 3.1415926535;
-const int marching_max = 128;
 const int obj_num = 2;
 const int reflection_num = 3;
 
@@ -63,6 +61,7 @@ const int reflection_num = 3;
 void main(){
 
     vec2 st = (gl_FragCoord.xy-resolution.xy)/resolution.xy;//これですでに-1〜1になってる。
+    // vec2 st = (gl_FragCoord.xy*2.0-resolution.xy)/min(resolution.x,resolution.y);twigl対応
     float st_x = st.x;
     float st_z = st.y;
 
@@ -76,19 +75,18 @@ void main(){
     mate1.albedo = vec3(0.9,0.3,0.3);
     mate2.albedo = vec3(0.9,0.9,0.9);
     mate1.f0 = vec3(0.7,0.7,0.7);
-    mate2.f0 = vec3(0.92,0.92,0.92);
+    mate2.f0 = vec3(0.6,0.6,0.6);
     mate1.roughness = 0.1;
     mate2.roughness = 0.1;
     mate1.kind = 2;
     mate2.kind = 2;
 
     Camera cam;
-    cam.pos = vec3(0.0,0.0,0.0);
+    cam.pos = vec3(0.0,0.0,5.0);
     cam.fov = (PI*30.0)/(2.0*180.0);
     cam.lookAt = normalize(vec3(0.0,1.0,0.0));
     cam.up = normalize(vec3(0.0,0.0,1.0));
-    // cam.pos.x = sin(time/200.0)*5.0;
-    // cam.lookAt = normalize(vec3(0.0,15.0,0.0)-cam.pos);
+    cam.lookAt = normalize(vec3(0.0,15.0,0.0)-cam.pos);
 
     Object objs[SIZE_OF_OBJS_ARRAY];
 
@@ -113,8 +111,8 @@ void main(){
     int hitnums[reflection_num];
     vec3 origins[reflection_num];
     bool ishits[reflection_num];
-    vec3 rays[reflection_num];
     vec3 norms[reflection_num];
+    bool isshadows[reflection_num];
 
     for (int i = 0; i < reflection_num; ++i){
         ishits[i] = false;
@@ -136,7 +134,7 @@ void main(){
         hitnums[i] = hitnum;
         ishits[i] = ishit;
         origins[i] = origin;
-        rays[i] = ray;
+
 
         if (ishit){
             for (int j = 0; j < obj_num; ++j){
@@ -169,14 +167,24 @@ void main(){
         vec3 brdf2 = vec3(0.0);
         vec3 view = normalize(origin-hitpos);
         vec3 light_vec;
+        int hoge;
+        bool fuga;
+        vec3 piyo;
         if (ishit){
             calc_light(dlight,hitpos,light_vec);
+            raymarching(hitpos+norm*0.02,light_vec,objs,hoge,fuga,piyo);
             for (int j = 0; j < obj_num; ++j){
                 if (j == hitnum){
                     brdf = material_color(objs[j].material,norm,view,light_vec);
                 }
             }
-            vec3 light_col = dlight.power*clamp(dot(norm,light_vec),0.0,0.95); //ここと下のclampの最低値をいじるとおもろい絵になる
+            vec3 light_col;
+            if (fuga){
+                light_col = vec3(0.0);
+            }else{
+                light_col = dlight.power*clamp(dot(norm,light_vec),0.0,0.95); //ここと下のclampの最低値をいじるとおもろい絵になる
+            }
+             
             light_col = light_col+vec3(0.5);//ambient light
 
             for (int j = 0; j < obj_num; ++j){
@@ -238,9 +246,24 @@ vec3 calc_ray(in Camera cam,in float x,in float z){
 
 float distance_func(in Object obj,in vec3 rayhead){
     vec3 p = rayhead-obj.pos;
+    float seed1 = sin(time/0.7)*2.0;
+    float seed2 = sin(time/0.5)*2.0;
+    float seed3 = sin(time/0.9)*2.0;
+    // const float k = 10.0; //twist amount
+    // float c = cos(k*p.z);
+    // float s = sin(k*p.z);
+    // mat2 m = mat2(c,-s,s,c);
+    // vec3 q = vec3(m*p.xy,p.z);
     if (obj.kind == 1){
         // sphere
-        return length(p)-obj.params[0];
+        float dd;
+        if (time >3.0){
+            dd = sin(seed1*p.x)*sin(seed2*p.y)*sin(seed3*p.z);
+        }else{
+            dd = 0.0;
+        }
+        return length(p)+dd-obj.params[0];
+        // return length(q)-obj.params[0];
     }else if (obj.kind==2){
         // box
         p = abs(p)-vec3(obj.params[0],obj.params[1],obj.params[2]);
